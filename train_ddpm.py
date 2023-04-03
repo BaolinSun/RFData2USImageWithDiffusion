@@ -5,6 +5,7 @@ import torch
 
 import torchvision.transforms as transforms
 
+from torch.utils.tensorboard import SummaryWriter
 from torch.utils.data import DataLoader
 from improved_diffusion.resample import create_named_schedule_sampler
 from pprint import pprint
@@ -25,8 +26,11 @@ from util import save_image
 
 
 def main():
+    args = create_argparser().parse_args()
+
     now = datetime.datetime.now().strftime("%Y-%m-%dT%H-%M-%S")
-    logdir = os.path.join("logs", now)
+    nowname = now + '_' + args.message
+    logdir = os.path.join("logs", nowname)
     ckptdir = os.path.join(logdir, "checkpoints")
     imgdir = os.path.join(logdir, "images/val")
     os.makedirs(logdir)
@@ -34,7 +38,6 @@ def main():
     os.makedirs(imgdir)
     logger = create_logger(output_dir=logdir, name="")
 
-    args = create_argparser().parse_args()
     logger.info(args)
     device = (torch.device("cuda:{}".format(args.gpu)) if torch.cuda.is_available() else torch.device("cpu"))
 
@@ -80,6 +83,7 @@ def main():
     )
 
     g_step = 0
+    writer = SummaryWriter()
     for epoch in range(args.n_epoch):
         model.train()
         for i, batch in enumerate(train_dataloader):
@@ -98,6 +102,8 @@ def main():
             loss.backward()
             optimizer.step()
 
+            writer.add_scalar(tag='loss/train', scalar_value=loss, global_step=g_step)
+
 
 
             if (g_step + 1) % args.log_interval == 0:
@@ -105,8 +111,7 @@ def main():
             if (g_step + 1) % args.save_interval == 0:
                 logger.info(f"saving model at step: {g_step} ...")
                 torch.save(model.state_dict(), os.path.join(ckptdir, f"model{(g_step):06d}.pth"))
-
-
+            if (g_step + 1) % args.sample_interval == 0:
                 model.eval()
                 with torch.no_grad():
                     model_kwargs = {}
@@ -118,6 +123,8 @@ def main():
                     save_image(sample, os.path.join(imgdir, f'sample_epoch{epoch}_step{g_step}.png'))
 
             g_step += 1
+
+    writer.close()
 
 
     

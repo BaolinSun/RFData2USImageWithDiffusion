@@ -21,6 +21,7 @@ def create_argparser():
         ema_rate="0.9999",  # comma-separated list of EMA values
         log_interval=10,
         save_interval=100,
+        sample_interval=300,
         resume_checkpoint="",
         use_fp16=False,
         fp16_scale_growth=1e-3,
@@ -29,11 +30,16 @@ def create_argparser():
         clip_denoised=True,
         n_epoch = 10000,
         n_cpu = 8,
-        gpu = 1
+        gpu = 0
     )
     defaults.update(model_and_diffusion_defaults())
     parser = argparse.ArgumentParser()
     add_dict_to_argparser(parser, defaults)
+    parser.add_argument("-m",
+                    "--message",
+                    help="training info",
+                    type=str,
+                    default='Null')
 
     return parser
 
@@ -43,7 +49,7 @@ def model_and_diffusion_defaults():
     Defaults for image training.
     """
     return dict(
-        image_size=64,
+        image_size=256,
         num_channels=128,
         num_res_blocks=2,
         num_heads=4,
@@ -57,7 +63,7 @@ def model_and_diffusion_defaults():
         noise_schedule="linear",
         timestep_respacing="",
         use_kl=False,
-        predict_xstart=True,
+        predict_xstart=False,
         rescale_timesteps=True,
         rescale_learned_sigmas=True,
         use_checkpoint=False,
