@@ -2,6 +2,7 @@ import os
 import argparse
 import datetime
 import torch
+import random
 
 import torchvision.transforms as transforms
 
@@ -21,7 +22,8 @@ from datasets import (
     RFDataUsImageTrain, 
     RFDataUsImageValidation,)
 from utils.logger import create_logger
-
+from autoencoder import AutoEncoder
+from itertools import chain
 from util import save_image
 
 
@@ -43,13 +45,18 @@ def main():
 
     logger.info("creating model and diffusion...")
     model, diffusion = create_model_and_diffusion(**args_to_dict(args, model_and_diffusion_defaults().keys()))
+    autoencoder = AutoEncoder()
     model.to(device)
+    autoencoder.to(device)
     schedule_sampler = create_named_schedule_sampler(args.schedule_sampler, diffusion)
 
 
     model_params = list(model.parameters())
     master_params = model_params
-    optimizer = torch.optim.AdamW(model.parameters(), lr = args.lr, weight_decay=args.weight_decay)
+    optimizer = torch.optim.AdamW(params=chain(model.parameters(),autoencoder.parameters()), lr = args.lr, weight_decay=args.weight_decay)
+
+    criterion_AE = torch.nn.MSELoss()
+    criterion_AE.to(device)
 
     # configure dataloder
     logger.info("creating data loader...")
@@ -81,50 +88,81 @@ def main():
         shuffle=True,
         num_workers=1,
     )
+    dataloader = val_dataloader
 
     g_step = 0
     writer = SummaryWriter()
     for epoch in range(args.n_epoch):
         model.train()
+        autoencoder.train()
         for i, batch in enumerate(train_dataloader):
 
             # Model inputs
             us_image = batch["us_image"].to(device)
             rf_data = batch["rf_data"].to(device)
 
+            encoder_rf,decoder_rf = autoencoder(rf_data)
+
             t, weights = schedule_sampler.sample(us_image.shape[0], device)
 
             optimizer.zero_grad()
 
-            losses = diffusion.training_losses(model=model, x_start=us_image, t=t)
-            loss = (losses["loss"] * weights).mean()
+            # Autoencoder loss
+            loss_ae = criterion_AE(decoder_rf, rf_data)
+
+            # Diffusion loss
+            losses = diffusion.training_losses(model=model, x_start=us_image, t=t, context=encoder_rf)
+            loss_unet = (losses["loss"] * weights).mean()
+
+            loss = loss_unet + 0.2*loss_ae
 
             loss.backward()
             optimizer.step()
 
             writer.add_scalar(tag='loss/train', scalar_value=loss, global_step=g_step)
+            writer.add_scalar(tag='loss/unet', scalar_value=loss_unet, global_step=g_step)
+            writer.add_scalar(tag='loss/ae', scalar_value=loss_ae, global_step=g_step)
 
 
 
             if (g_step + 1) % args.log_interval == 0:
-                logger.info(f"epoch: {epoch}, step: {g_step+1},  loss: {loss.item()}, mse: {losses['mse'].mean().item()}")
+                logger.info(f"epoch: {epoch}, step: {g_step+1},  loss: {loss.item()}, loss_unet: {loss_unet.item()}, loss_ae: {loss_ae.item()}")
 
             if (g_step + 1) % args.sample_interval == 0:
                 model.eval()
+                autoencoder.eval()
                 with torch.no_grad():
                     model_kwargs = {}
                     sample_fn = (
                         diffusion.p_sample_loop if not args.use_ddim else diffusion.ddim_sample_loop
                     )
-                    sample = sample_fn(model, (args.batch_size, 3, args.image_size, args.image_size),
+                    sample = sample_fn(model, (args.batch_size, 3, args.image_size, args.image_size), context=encoder_rf,
                                         clip_denoised=args.clip_denoised, progress=args.progress, model_kwargs=model_kwargs)
-                    save_image(sample, os.path.join(imgdir, f'sample_epoch{epoch}_step{g_step}.png'))
+                    
+                    res = torch.cat([sample, us_image], dim=0)      
+                    save_image(res, os.path.join(imgdir, f'sample_epoch{epoch}_step{g_step}_train.png'), nrow = args.batch_size)
 
-            if (g_step + 1) % args.save_interval == 0:
-                logger.info(f"saving model at step: {g_step} ...")
-                torch.save(model.state_dict(), os.path.join(ckptdir, f"model{(g_step):06d}.pth"))
+                    try:
+                        batch = next(iter(dataloader))
+                    except StopIteration:
+                        dataloader = val_dataloader
+                        batch = next(iter(dataloader))
+                    us_image = batch["us_image"].to(device)
+                    rf_data = batch["rf_data"].to(device)
+                    encoder_rf = autoencoder.rf_encoder(rf_data)
+                    sample = sample_fn(model, (args.batch_size, 3, args.image_size, args.image_size), context=encoder_rf,
+                                        clip_denoised=args.clip_denoised, progress=args.progress, model_kwargs=model_kwargs)
+                    res = torch.cat([sample, us_image], dim=0)      
+                    save_image(res, os.path.join(imgdir, f'sample_epoch{epoch}_step{g_step}_eval.png'), nrow = args.batch_size)
+
+
+            # if (g_step + 1) % args.save_interval == 0:
+            #     logger.info(f"saving model at step: {g_step} ...")
+            #     torch.save(model.state_dict(), os.path.join(ckptdir, f"model_unet_{(g_step):06d}.pth"))
+            #     torch.save(autoencoder.state_dict(), os.path.join(ckptdir, f"model_ae_{(g_step):06d}.pth"))
 
             g_step += 1
+
 
     writer.close()
 
