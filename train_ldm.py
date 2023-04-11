@@ -91,7 +91,7 @@ def main():
     dataloader = val_dataloader
 
     g_step = 0
-    writer = SummaryWriter()
+    writer = SummaryWriter(logdir)
     for epoch in range(args.n_epoch):
         model.train()
         autoencoder.train()
