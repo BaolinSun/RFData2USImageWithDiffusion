@@ -123,11 +123,13 @@ class GaussianDiffusion:
         model_var_type,
         loss_type,
         rescale_timesteps=False,
+        w
     ):
         self.model_mean_type = model_mean_type
         self.model_var_type = model_var_type
         self.loss_type = loss_type
         self.rescale_timesteps = rescale_timesteps
+        self.w = w
 
         # Use float64 for accuracy.
         betas = np.array(betas, dtype=np.float64)
@@ -257,7 +259,15 @@ class GaussianDiffusion:
 
         B, C = x.shape[:2]
         assert t.shape == (B,)
-        model_output = model(x, self._scale_timesteps(t), context=context, **model_kwargs)
+
+        model_input = th.cat((x, context), dim=1)
+        pred_eps_cond = model(model_input, self._scale_timesteps(t), **model_kwargs)
+
+        model_input = th.cat((x, th.zeros(context.shape).to(context.device)), dim=1)
+        pred_eps_uncond = model(model_input, self._scale_timesteps(t), **model_kwargs)
+
+
+        model_output = (1 + self.w) * pred_eps_cond - self.w * pred_eps_uncond
 
         if self.model_var_type in [ModelVarType.LEARNED, ModelVarType.LEARNED_RANGE]:
             assert model_output.shape == (B, C * 2, *x.shape[2:])
@@ -712,7 +722,9 @@ class GaussianDiffusion:
             if self.loss_type == LossType.RESCALED_KL:
                 terms["loss"] *= self.num_timesteps
         elif self.loss_type == LossType.MSE or self.loss_type == LossType.RESCALED_MSE:
-            model_output = model(x_t, self._scale_timesteps(t), context=context, **model_kwargs)
+
+            model_input = th.cat((x_t, context), dim=1)
+            model_output = model(model_input, self._scale_timesteps(t), **model_kwargs)
 
             if self.model_var_type in [
                 ModelVarType.LEARNED,

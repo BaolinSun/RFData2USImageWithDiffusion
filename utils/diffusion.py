@@ -21,7 +21,7 @@ def create_argparser():
         ema_rate="0.9999",  # comma-separated list of EMA values
         log_interval=10,
         save_interval=100,
-        sample_interval=300,
+        sample_interval=500,
         resume_checkpoint="",
         use_fp16=False,
         fp16_scale_growth=1e-3,
@@ -49,7 +49,7 @@ def model_and_diffusion_defaults():
     Defaults for image training.
     """
     return dict(
-        image_size=256,
+        image_size=64,
         num_channels=128,
         num_res_blocks=2,
         num_heads=4,
@@ -63,11 +63,12 @@ def model_and_diffusion_defaults():
         noise_schedule="linear",
         timestep_respacing="",
         use_kl=False,
-        predict_xstart=False,
+        predict_xstart=True,
         rescale_timesteps=True,
         rescale_learned_sigmas=True,
         use_checkpoint=False,
         use_scale_shift_norm=True,
+        weight = 0.1
     )
 
 
@@ -91,6 +92,7 @@ def create_model_and_diffusion(
     rescale_learned_sigmas,
     use_checkpoint,
     use_scale_shift_norm,
+    weight
 ):
     model = create_model(
         image_size,
@@ -116,6 +118,7 @@ def create_model_and_diffusion(
         rescale_timesteps=rescale_timesteps,
         rescale_learned_sigmas=rescale_learned_sigmas,
         timestep_respacing=timestep_respacing,
+        weight = weight
     )
 
     return model, diffusion
@@ -148,7 +151,7 @@ def create_model(
         attention_ds.append(image_size // int(res))
 
     return UNetModel(
-        in_channels=3,
+        in_channels=6,
         model_channels=num_channels,
         out_channels=(3 if not learn_sigma else 6),
         num_res_blocks=num_res_blocks,
@@ -174,6 +177,7 @@ def create_gaussian_diffusion(
     rescale_timesteps=False,
     rescale_learned_sigmas=False,
     timestep_respacing="",
+    weight
 ):
 
     betas = gd.get_named_beta_schedule(noise_schedule, steps)
@@ -206,7 +210,8 @@ def create_gaussian_diffusion(
         model_mean_type=model_mean_type,
         model_var_type = model_var_type,
         loss_type = loss_type,
-        rescale_timesteps = rescale_timesteps
+        rescale_timesteps = rescale_timesteps,
+        w = weight
     )
 
 
