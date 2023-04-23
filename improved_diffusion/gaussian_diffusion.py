@@ -764,6 +764,8 @@ class GaussianDiffusion:
         else:
             raise NotImplementedError(self.loss_type)
 
+        terms['model_output'] = model_output
+
         return terms
 
     def _prior_bpd(self, x_start):

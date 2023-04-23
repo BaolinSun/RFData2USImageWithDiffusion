@@ -13,6 +13,13 @@ from typing import Any, BinaryIO, List, Optional, Tuple, Union
 from types import FunctionType
 
 
+def zero_grad(model_params):
+    for param in model_params:
+        # Taken from https://pytorch.org/docs/stable/_modules/torch/optim/optimizer.html#Optimizer.add_param_group
+        if param.grad is not None:
+            param.grad.detach_()
+            param.grad.zero_()
+
 
 
 def _log_api_usage_once(obj: Any) -> None:
