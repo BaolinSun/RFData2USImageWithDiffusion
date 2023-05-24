@@ -15,7 +15,7 @@ from utils.diffusion import (
     create_model_and_diffusion,
     model_and_diffusion_defaults,
 )
-from datasets import (
+from ning.datasets import (
     PicmusTrainDataset, 
     PicmusValDataset, 
     RFDataUsImageTrain, 
@@ -61,8 +61,8 @@ def main():
         transforms.Resize((args.image_size, args.image_size)),
     ]
 
-    training_images_list_file = 'some/us_image_train.txt'
-    test_images_list_file = 'some/us_image_val.txt'
+    training_images_list_file = 'datasets/some/us_image_train.txt'
+    test_images_list_file = 'datasets/some/us_image_val.txt'
     # training_images_list_file = 'picmus/picmus_train.txt'
     # test_images_list_file = 'picmus/picmus_val.txt'
     train_dataloader = DataLoader(
